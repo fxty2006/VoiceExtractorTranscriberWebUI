@@ -1,0 +1,27 @@
+# Python キャッシュ・コンパイル済みファイル
+__pycache__/
+*.py[codz]
+*$py.class
+*.egg-info/
+
+# 専用仮想環境（Git管理対象外）
+.venv/
+venv/
+env/
+
+# Dドライブ集約キャッシュ・AIモデル重み・一時ファイル・出力ファイル（大容量のためGit除外）
+.cache/
+models/
+temp_preview/
+outputs/
+
+# ユーザー個別設定・旧サンプル（初期値は app/config_manager.py で一元管理）
+config.json
+config.example.json
+
+# OS / エディタ / バックアップ・ログ
+.DS_Store
+Thumbs.db
+*.log
+backup_*
+*.bak

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="system">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Extractor &amp; Transcriber WebUI v0.1.0（音声分離・文字起こしWebUI）</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">🎙️</div>
+        <div class="brand-title">
+          <div class="brand-heading-row">
+            <h1>Voice Extractor &amp; Transcriber WebUI（音声分離・文字起こしWebUI）</h1>
+            <span class="version-badge" id="appVersionBadge" title="開発中バージョン (Development Preview)">v0.1.0</span>
+          </div>
+          <p>ローカルGPU 音声分離・ノイズ除去・映像同期プレビュー・文字起こし</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <span class="status-badge" id="systemStatusBadge">
+          <span class="spinner-dot"></span>
+          <span id="systemStatusText">初期化中...</span>
+        </span>
+        <div class="theme-switcher" role="group" aria-label="テーマ切替">
+          <button type="button" class="theme-btn active" data-theme-set="system">🖥 システムデフォルト</button>
+          <button type="button" class="theme-btn" data-theme-set="light">☀️ ライト</button>
+          <button type="button" class="theme-btn" data-theme-set="dark">🌙 ダーク</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2カラム メイン画面 -->
+    <main class="main-grid">
+      <!-- ==================== 左カラム：入力 ＆ AI処理設定 ==================== -->
+      <div class="column">
+        <!-- ① ファイル入力エリア -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="step-num">1</span> 入力ファイル（動画 / 音声）</h2>
+            <span class="file-meta" id="inputTypeBadge">ファイル待機中</span>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" accept=".mp4,.mov,.mkv,.avi,.webm,.wav,.mp3,.flac,.m4a,.aac,.ogg" style="display:none">
+            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-main">動画または音声ファイルをドラッグ＆ドロップ</div>
+            <div class="dropzone-sub">またはクリックしてファイルを選択</div>
+          </div>
+
+          <!-- 対応拡張子の常時明示 -->
+          <div class="ext-list-box">
+            <div class="ext-row">
+              <span class="ext-row-label">🎬 動画:</span>
+              <span class="ext-badge">.mp4</span>
+              <span class="ext-badge">.mov</span>
+              <span class="ext-badge">.mkv</span>
+              <span class="ext-badge">.avi</span>
+              <span class="ext-badge">.webm</span>
+            </div>
+            <div class="ext-row">
+              <span class="ext-row-label">🎵 音声:</span>
+              <span class="ext-badge">.wav</span>
+              <span class="ext-badge">.mp3</span>
+              <span class="ext-badge">.flac</span>
+              <span class="ext-badge">.m4a</span>
+              <span class="ext-badge">.aac</span>
+              <span class="ext-badge">.ogg</span>
+            </div>
+          </div>
+
+          <div class="file-info-box">
+            <div>
+              <strong id="selectedFileName">未選択（ファイルをドロップしてください）</strong>
+              <div class="file-meta" id="selectedFileMeta">長さ --:-- / 48kHz ステレオ変換で分離処理を行います</div>
+            </div>
+          </div>
+
+          <div class="mini-player">
+            <div class="mini-player-label">
+              <span>元ファイル 確認用プレイヤー</span>
+              <span>Original</span>
+            </div>
+            <audio id="origAudioEl" preload="metadata"></audio>
+            <div class="player-bar">
+              <button type="button" class="play-circle-btn" id="origPlayBtn" disabled>▶</button>
+              <div class="progress-track" id="origProgressTrack"><div class="progress-fill" id="origProgressFill"></div></div>
+              <span class="time-text" id="origTimeText">00:00 / 00:00</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ② 分離・ノイズ除去設定エリア -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="step-num">2</span> 分離・ノイズ除去設定</h2>
+            <span class="file-meta" id="gpuDeviceMeta">推論エンジン: 確認中...</span>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">処理モード</div>
+            <div class="radio-list">
+              <label class="radio-item">
+                <input type="radio" name="processMode" value="vocal_extract" checked>
+                <div>
+                  <div class="radio-title">① ボーカル・声の抽出（BGM・環境音除去）</div>
+                  <div class="radio-desc">選択した分離モデル（MDX-NET / Demucs）を用いて声トラックと背景音/BGMトラックを分離します</div>
+                </div>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="processMode" value="noise_reduce">
+                <div>
+                  <div class="radio-title">② 環境ノイズ除去のみ（エアコン・ファン音等）</div>
+                  <div class="radio-desc">STFTスペクトルゲーティングを用いて声の輪郭を保ったまま定常雑音を抑制します</div>
+                </div>
+              </label>
+              <label class="radio-item">
+                <input type="radio" name="processMode" value="both">
+                <div>
+                  <div class="radio-title">③ 両方同時適用（音声分離 ＋ 定常ノイズ除去）</div>
+                  <div class="radio-desc">BGM分離後に残る微細な定常ノイズも連続除去します</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="modelSelect">使用分離モデル</label>
+            <select id="modelSelect">
+              <option value="uvr_mdx_net_inst_hq_5" selected>UVR MDX-NET Inst HQ 5（ボーカル特化・最高音質推奨）</option>
+              <option value="hdemucs_high">hdemucs_high（torchaudio Hybrid Demucs 4-Stem）</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>分離・ノイズ除去強度</span>
+              <span class="value-pill" id="strengthValue">85%</span>
+            </div>
+            <input type="range" id="strengthSlider" min="0" max="100" value="85">
+          </div>
+
+          <div class="form-group" style="margin-top: 16px;">
+            <button type="button" class="btn btn-primary" id="btnSeparate" disabled>
+              ▶ 音声分離・ノイズ除去を実行（プレビュー生成）
+            </button>
+          </div>
+
+          <!-- Temp手動管理＆注意書きパネル -->
+          <div class="temp-manage-box clean" id="tempManageBox">
+            <div class="temp-alert-text" id="tempAlertText">
+              ✅ Tempフォルダを確認中...
+            </div>
+            <div class="temp-meta-text" id="tempMetaText">
+              ※ 自動削除は行われません。作業完了後や容量が気になるときに手動で削除してください。
+            </div>
+            <div class="temp-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnClearTemp" disabled>
+                🗑️ Temp内の過去プレビューを手動で一括削除
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnOpenTemp">
+                📂 Tempフォルダを開く
+              </button>
+            </div>
+          </div>
+
+          <!-- 全設定の出荷時初期化エリア -->
+          <div class="reset-config-box">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnResetDefaults" title="保存先・命名規則・音量・プロンプト等を出荷時の推奨初期値に戻します">
+              🔄 全設定を出荷時初期値にリセット
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ==================== 右カラム：プレビュー微調整 ＆ 文字起こし ＆ 保存 ==================== -->
+      <div class="column">
+        <!-- ③ プレビュー ＆ ミキシング微調整エリア -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="step-num">3</span> プレビュー ＆ ミキシング微調整</h2>
+            <span class="preview-status-banner" id="previewStatusBadge">未分離（ファイル読込待ち）</span>
+          </div>
+
+          <div class="unprocessed-overlay-note" id="unprocessedPreviewNote">
+            ※ 現在は未処理状態です。ファイルを読み込み左の「音声分離・ノイズ除去を実行」を押すと、ここに抽出音声と同期映像プレビューが読み込まれます。
+          </div>
+
+          <!-- 抽出音声と連動する同期映像モニター -->
+          <div class="video-sync-box" id="videoSyncBox">
+            <div class="video-sync-header">
+              <div class="video-sync-title">🎬 同期映像プレビューモニター</div>
+              <span class="sync-pill" id="syncTrackLabel">🔗 ファイル読み込み待ち</span>
+            </div>
+            <div class="video-hud-bar">
+              <span id="videoFileHud">ファイル未読込</span>
+              <span id="videoTimeHud">00:00 / 00:00</span>
+            </div>
+            <div class="video-stage" id="videoStage">
+              <video id="syncVideoPlayer" class="sync-video-player" muted playsinline preload="metadata"></video>
+              <div class="video-placeholder" id="videoPlaceholder">
+                <div class="video-placeholder-icon">🎞️</div>
+                <div class="video-placeholder-caption">動画読み込み・分離後、下の「▶」を押すと映像が音声と同期再生されます</div>
+                <div class="video-placeholder-sub">※ 元映像の音声は自動ミュートされ、下のトラックA/Bまたはミックス音声が再生されます</div>
+              </div>
+            </div>
+            <div class="video-audio-only-notice" id="videoAudioOnlyNotice">
+              🎵 音声ファイル（映像なし）が入力されているため、映像モニターは非表示です
+            </div>
+          </div>
+
+          <audio id="trackAAudioEl" preload="auto"></audio>
+          <audio id="trackBAudioEl" preload="auto"></audio>
+
+          <!-- トラックA -->
+          <div class="track-card track-a">
+            <div class="track-header">
+              <div class="track-name">
+                <span class="track-tag tag-a">トラックA</span>
+                抽出された「声（Vocal / Speech）」
+              </div>
+              <div class="track-controls">
+                <button type="button" class="btn btn-secondary btn-sm btn-toggle" id="btnMuteA">🔇 ミュート</button>
+                <button type="button" class="btn btn-secondary btn-sm btn-toggle" id="btnSoloA">🎧 ソロ再生</button>
+              </div>
+            </div>
+            <div class="waveform-box">
+              <canvas id="waveCanvasA" class="wave-canvas" title="クリックで再生位置をシーク"></canvas>
+            </div>
+            <div class="player-bar">
+              <button type="button" class="play-circle-btn" id="playBtnA" disabled>▶</button>
+              <div class="progress-track" id="progTrackA"><div class="progress-fill" id="progA" style="background-color: var(--track-a);"></div></div>
+              <span class="time-text" id="timeA">00:00 / 00:00</span>
+            </div>
+            <div class="track-slider-row">
+              <span>音量バランス</span>
+              <input type="range" id="sliderVolA" min="0" max="150" value="100" list="volTickA">
+              <datalist id="volTickA"><option value="100"></option></datalist>
+              <span class="value-pill" id="volA" title="クリックで100%にリセット" style="cursor: pointer;">100%</span>
+            </div>
+          </div>
+
+          <!-- トラックB -->
+          <div class="track-card track-b">
+            <div class="track-header">
+              <div class="track-name">
+                <span class="track-tag tag-b">トラックB</span>
+                分離された「背景音 / ノイズ（BGM / Noise）」
+              </div>
+              <div class="track-controls">
+                <button type="button" class="btn btn-secondary btn-sm btn-toggle" id="btnMuteB">🔇 ミュート</button>
+                <button type="button" class="btn btn-secondary btn-sm btn-toggle" id="btnSoloB">🎧 ソロ再生</button>
+              </div>
+            </div>
+            <div class="waveform-box">
+              <canvas id="waveCanvasB" class="wave-canvas" title="クリックで再生位置をシーク"></canvas>
+            </div>
+            <div class="player-bar">
+              <button type="button" class="play-circle-btn" id="playBtnB" disabled>▶</button>
+              <div class="progress-track" id="progTrackB"><div class="progress-fill" id="progB" style="background-color: var(--track-b);"></div></div>
+              <span class="time-text" id="timeB">00:00 / 00:00</span>
+            </div>
+            <div class="track-slider-row">
+              <span>音量バランス</span>
+              <input type="range" id="sliderVolB" min="0" max="150" value="100" list="volTickB">
+              <datalist id="volTickB"><option value="100"></option></datalist>
+              <span class="value-pill" id="volB" title="クリックで100%にリセット" style="cursor: pointer;">100%</span>
+            </div>
+          </div>
+
+          <!-- ミックス試聴バー -->
+          <div class="mix-preview-bar">
+            <div class="mix-top">
+              <strong style="font-size: 0.88rem;">🎚️ リアルタイム ブレンド試聴（A ＋ B スライダー反映）</strong>
+              <span class="file-meta">再生中にスライダー・ミュート・ソロを変更すると即座に音量へ反映されます</span>
+            </div>
+            <div class="player-bar">
+              <button type="button" class="play-circle-btn" id="playBtnMix" disabled>▶</button>
+              <div class="progress-track" id="progTrackMix"><div class="progress-fill" id="progMix"></div></div>
+              <span class="time-text" id="timeMix">00:00 / 00:00</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ④ テキスト抽出（文字起こし）エリア -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="step-num">4</span> テキスト抽出（トラックA連動・文字起こし）</h2>
+            <span class="file-meta">Whisper large-v3-turbo (ローカル推論)</span>
+          </div>
+
+          <div class="transcribe-toolbar">
+            <div class="transcribe-top-row">
+              <button type="button" id="btnTranscribe" class="btn btn-primary" style="width: auto; padding: 9px 16px; font-size: 0.88rem;" disabled>
+                📝 トラックAの声から文字起こしを実行
+                <span class="btn-lock-note" id="noteTranscribe">🔒 音声分離が未実行のため無効</span>
+              </button>
+              <div class="transcribe-settings">
+                <select id="langSelect">
+                  <option value="ja" selected>言語: 日本語 (ja)</option>
+                  <option value="en">言語: 英語 (en)</option>
+                  <option value="auto">言語: 自動検出</option>
+                </select>
+                <label class="checkbox-inline">
+                  <input type="checkbox" id="timestampCheck" checked>
+                  タイムスタンプ付与（SRT対応）
+                </label>
+                <label class="checkbox-inline" title="無音カット(Silero VAD)をオフにし、「えい！」「やぁ！」「とぅ！」等のごく短い掛け声も切り捨てずに認識させます（無音区間の誤認識が増える場合があります）">
+                  <input type="checkbox" id="disableVadCheck">
+                  VAD無音カット無効（短い掛け声も全区間認識）
+                </label>
+              </div>
+            </div>
+
+            <!-- プロンプトプリセット & プロンプト入力欄（常時表示・流し込み連動） -->
+            <div class="prompt-preset-row">
+              <label for="promptPresetSelect" class="preset-label">認識プリセット:</label>
+              <select id="promptPresetSelect" class="preset-select">
+                <option value="standard" selected>🗣️ 通常・標準会話 (感嘆音抑制・空欄)</option>
+                <option value="laughter_emotion">😊 笑い声・感情・相槌 (あはは、ふふふ、やだもう等)</option>
+                <option value="sigh_gasp_shout">😮‍💨 吐息・喘ぎ・含み音・叫び特化 (ふぅ…、ぐぬぬ…、あっ…、きゃー！等)</option>
+                <option value="action_shouts">⚡ 掛け声・気合・アクション特化 (えい！/やぁ！/とぅ！/うんしょ！等)</option>
+                <option value="custom">✏️ カスタム (手動編集)</option>
+              </select>
+            </div>
+
+            <!-- 最初から常時表示されるプロンプト入力欄 -->
+            <div id="customPromptBox" class="custom-prompt-box">
+              <label for="customPromptInput" class="custom-prompt-label">プロンプト語句（プリセット選択で自動入力・自由加筆可能）:</label>
+              <textarea id="customPromptInput" class="custom-prompt-textarea" rows="2" placeholder="認識させたい語句やトーンを入力（プリセット選択で自動入力され、自由に追加・変更できます）"></textarea>
+            </div>
+          </div>
+
+          <textarea id="transcriptArea" class="transcript-textarea" placeholder="音声分離後に「トラックAの声から文字起こしを実行」ボタンを押すと、ここに抽出されたテキストが表示されます（手動編集も可能）。"></textarea>
+
+          <div class="textarea-footer">
+            <span>※ 分離処理と連動せず、ボタンを押した時のみ文字起こしが作動します</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCopyTranscript" disabled>📋 テキストをコピー</button>
+          </div>
+        </section>
+
+        <!-- ⑤ 保存設定（IrodoriTTS方式）＆ 書き出しエリア -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title"><span class="step-num">5</span> 保存設定 ＆ ファイル書き出し</h2>
+            <span class="file-meta">IrodoriTTS方式プリフィックス対応</span>
+          </div>
+
+          <div class="two-col-inputs form-group">
+            <div>
+              <label class="form-label" for="outputDir">保存先ベースフォルダ</label>
+              <div class="dir-input-row">
+                <input type="text" id="outputDir" value="outputs">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnBrowseDir" title="フォルダを選択">📁 参照</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnOpenOutputDir" title="保存先フォルダをエクスプローラーで開く">📂 フォルダを開く</button>
+              </div>
+            </div>
+            <div>
+              <label class="form-label" for="wavTarget">WAV / 差し替え音 対象</label>
+              <select id="wavTarget">
+                <option value="vocal" selected>トラックA（声のみ）</option>
+                <option value="mixed">ミックス済み音声（A＋B）</option>
+                <option value="bgm">トラックB（背景音/ノイズのみ）</option>
+                <option value="both">A・B両方を個別WAV出力</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="prefixPattern">サブフォルダ・ファイル名プリフィックス</label>
+            <input type="text" id="prefixPattern" value="%date%\%time%_%filename%">
+            <div class="prefix-tags">
+              <span class="var-chip" data-var="%date%">+ %date%</span>
+              <span class="var-chip" data-var="%time%">+ %time%</span>
+              <span class="var-chip" data-var="%datetime%">+ %datetime%</span>
+              <span class="var-chip" data-var="%filename%">+ %filename%</span>
+              <span class="var-chip" data-var="%mode%">+ %mode%</span>
+            </div>
+            <div class="path-preview-box" id="pathPreview"></div>
+          </div>
+
+          <div class="export-grid">
+            <!-- 全ファイル一括保存 (全幅・グラデーションアクセント) -->
+            <button type="button" id="btnSaveAll" class="btn btn-export btn-export-all" style="grid-column: 1 / -1;" disabled>
+              <div>
+                <div class="export-btn-main">📦 すべて一括保存（音声・動画・字幕・テキスト）</div>
+                <span class="export-btn-sub" id="subSaveAll">🔒 音声分離が未処理のため暗転（無効）</span>
+              </div>
+            </button>
+
+            <!-- トラックA 音声保存 (スカイブルー) -->
+            <button type="button" id="btnSaveTrackA" class="btn btn-export btn-export-audio-a" disabled>
+              <div>
+                <div class="export-btn-main">🎵 トラックA（声・WAV）を保存</div>
+                <span class="export-btn-sub" id="subSaveTrackA">🔒 音声分離が未処理のため暗転（無効）</span>
+              </div>
+            </button>
+
+            <!-- トラックB 音声保存 (パープル) -->
+            <button type="button" id="btnSaveTrackB" class="btn btn-export btn-export-audio-b" disabled>
+              <div>
+                <div class="export-btn-main">🎵 トラックB（背景音/BGM・WAV）を保存</div>
+                <span class="export-btn-sub" id="subSaveTrackB">🔒 音声分離が未処理のため暗転（無効）</span>
+              </div>
+            </button>
+
+            <!-- 動画保存：音声差し替え (エメラルドグリーン) -->
+            <button type="button" id="btnSaveReplacedMp4" class="btn btn-export btn-export-video" disabled>
+              <div>
+                <div class="export-btn-main">🎬 音声差し替え動画（MP4）を保存</div>
+                <span class="export-btn-sub" id="subSaveReplacedMp4">🔒 音声分離が未処理のため暗転（無効）</span>
+              </div>
+            </button>
+
+            <!-- 動画保存：映像のみ無音 (エメラルドグリーン) -->
+            <button type="button" id="btnSaveVideoOnlyMp4" class="btn btn-export btn-export-video" disabled>
+              <div>
+                <div class="export-btn-main">🎞️ 映像のみ（音声なしMP4）を保存</div>
+                <span class="export-btn-sub" id="subSaveVideoOnlyMp4">🔒 動画処理待ちのため暗転（無効）</span>
+              </div>
+            </button>
+
+            <!-- テキスト保存：TXT / SRT (アンバーゴールド) -->
+            <button type="button" id="btnSaveTxt" class="btn btn-export btn-export-text" style="grid-column: 1 / -1;" disabled>
+              <div>
+                <div class="export-btn-main">📄 文字起こしテキスト（TXT / SRT字幕）を保存</div>
+                <span class="export-btn-sub" id="subSaveTxt">🔒 文字起こし未実行のため暗転（無効）</span>
+              </div>
+            </button>
+          </div>
+
+          <div class="export-result-box" id="exportResultBox">
+            <div class="export-result-header">
+              <div class="export-result-title">✅ 保存完了ファイル:</div>
+              <button type="button" class="btn btn-secondary btn-xs" id="btnOpenSavedFolder">📂 保存先を開く</button>
+            </div>
+            <div class="export-result-paths" id="exportResultPaths"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- リアルタイム進捗モーダル（同一ページ内HTML・ポップアップブロック対象外） -->
+  <div class="progress-modal-overlay" id="progressModalOverlay" style="display: none;">
+    <div class="progress-modal-card">
+      <div class="progress-modal-header">
+        <span class="progress-modal-icon" id="progressModalIcon">⚡</span>
+        <h3 class="progress-modal-title" id="progressModalTitle">処理を実行中...</h3>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+      </div>
+      <div class="progress-meta-row">
+        <span class="progress-stage-text" id="progressStageText">準備中...</span>
+        <span class="progress-percent-text" id="progressPercentText">0%</span>
+      </div>
+      <div class="progress-elapsed-row">
+        <span class="progress-elapsed-text" id="progressElapsedText">経過時間: 00:00</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/ui_state.js"></script>
+  <script src="/static/js/audio_video_sync.js"></script>
+  <script src="/static/js/api_client.js"></script>
+</body>
+</html>
